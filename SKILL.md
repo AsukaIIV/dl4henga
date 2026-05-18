@@ -126,6 +126,10 @@ python3 scripts/dl.py https://e-hentai.org/g/{id}/{token}/
 | nhentai 搜索无结果 | 先 `--check` 确认代理和镜像状态 |
 | 下载文件在家目录而非桌面 | 脚本已修复，更新后重试 |
 
+## 许可
+
+[CC BY-NC 4.0](LICENSE) — 仅供个人学习研究，禁止商用。详见 [LICENSE](LICENSE)。
+
 ## 注意事项
 
 - 首次使用: `pip3 install jmcomic cloudscraper curl_cffi`
