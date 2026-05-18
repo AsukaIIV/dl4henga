@@ -1,0 +1,87 @@
+{
+  "description": "nhentai 镜像站点列表 — 由 update_mirrors.py 自动维护",
+  "last_updated": "2026-05-18",
+  "update_urls": [
+    "https://raw.githubusercontent.com/nickdeny/nhentai-mirror-list/main/mirrors.json",
+    "https://nhentai-mirror.pages.dev/mirrors.json"
+  ],
+  "mirrors": [
+    {
+      "domain": "nhentai.net",
+      "aliases": [
+        "nhentai.net",
+        "www.nhentai.net"
+      ],
+      "status": "active",
+      "type": "primary",
+      "url_pattern": "/g/{id}/",
+      "download_pattern": "/g/{id}/download",
+      "tested_at": "2026-05-18",
+      "test_result": "HTTP 200"
+    },
+    {
+      "domain": "nhentai.to",
+      "aliases": [
+        "nhentai.to"
+      ],
+      "status": "active",
+      "type": "mirror",
+      "url_pattern": "/g/{id}/",
+      "download_pattern": "/g/{id}/download",
+      "tested_at": "2026-05-18",
+      "test_result": "HTTP 200"
+    },
+    {
+      "domain": "nhentai.xxx",
+      "aliases": [
+        "nhentai.xxx"
+      ],
+      "status": "active",
+      "type": "mirror",
+      "url_pattern": "/g/{id}/",
+      "download_pattern": "/g/{id}/download",
+      "tested_at": "2026-05-18",
+      "test_result": "HTTP 200"
+    },
+    {
+      "domain": "nxhentai.com",
+      "aliases": [
+        "nxhentai.com"
+      ],
+      "status": "down",
+      "type": "mirror",
+      "url_pattern": "/g/{id}/",
+      "download_pattern": "/g/{id}/download",
+      "tested_at": "2026-05-18",
+      "test_result": "DNS 解析失败"
+    },
+    {
+      "domain": "hentai.mama",
+      "aliases": [
+        "hentai.mama"
+      ],
+      "status": "down",
+      "type": "mirror",
+      "url_pattern": "/g/{id}/",
+      "download_pattern": "/g/{id}/download",
+      "tested_at": "2026-05-18",
+      "test_result": "DNS 解析失败"
+    }
+  ],
+  "fallback_patterns": [
+    "nhentai.{tld}/g/{id}/",
+    "nhentai*.{tld}/g/{id}/",
+    "nxhentai*.{tld}/g/{id}/",
+    "hentai*.{tld}/g/{id}/"
+  ],
+  "download_indicator_keywords": [
+    "download",
+    "torrent",
+    "magnet",
+    "btih",
+    ".torrent",
+    "种子",
+    "ダウンロード",
+    "direct-download"
+  ]
+}
