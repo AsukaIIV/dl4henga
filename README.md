@@ -7,7 +7,7 @@
 ## 安装
 
 ```
-<url>,安装该仓库内的skill
+https://github.com/AsukaIIV/dl4henga,安装该仓库内的skill
 
 dl4henga,初始化该skill
 ```
