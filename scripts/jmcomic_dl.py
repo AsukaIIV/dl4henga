@@ -126,6 +126,7 @@ def main():
     parser.add_argument("--tag", metavar="TAG", help="配合 --random 使用")
     parser.add_argument("--check", action="store_true", help="检测")
     parser.add_argument("-q", "--quiet", action="store_true", help="安静模式")
+    parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
     if args.check:
@@ -134,7 +135,11 @@ def main():
 
     if args.search or (args.random and args.tag):
         query = args.search or args.tag
-        galleries = search_albums(query, proxy=args.proxy, count=args.count, verbose=not args.quiet)
+        galleries = search_albums(query, proxy=args.proxy, count=args.count, verbose=not args.quiet and not args.json)
+        if args.json:
+            import json as _json
+            print(_json.dumps(galleries, ensure_ascii=False, indent=2))
+            return
         if args.random and galleries:
             chosen = random.choice(galleries)
             print(f"\n🎲 随机选中: JM{chosen['id']} | {chosen['title'][:60]}")

@@ -251,6 +251,97 @@ def search_tag(tag, page=1, proxy=None, cookies=None, verbose=True):
     return galleries
 
 
+# ── 新增: 标题搜索正则 ────────────────────────────────────
+SEARCH_TITLE_RE = re.compile(r'<div class="it5"[^>]*>\s*<a[^>]*>([^<]+)</a>', re.IGNORECASE)
+SEARCH_CATEGORY_RE = re.compile(r'<div class="cs"[^>]*>\s*<div[^>]*>([^<]+)</div>', re.IGNORECASE)
+
+
+def search_galleries(query, proxy=None, cookies=None, count=20, verbose=True):
+    """E-Hentai 关键词搜索 (?f_search=), 返回标准化结果列表 [{id, title, pages, url}, ...]"""
+    domain = "e-hentai.org"
+    url = f"https://{domain}/?f_search={quote_plus(query)}"
+    if verbose:
+        print(f"🔍 E-Hentai 搜索: {query}")
+    html = _curl_get(url, proxy=proxy, cookies=cookies, timeout=20)
+    if not html:
+        return []
+
+    # 增加页数匹配
+    # E-Hentai 搜索结果中，每个画廊通常在 <div class="it5"> 中有标题链接
+    results = []
+    seen = set()
+
+    # 分割每个画廊条目
+    # E-Hentai 搜索结果中，每个画廊以 <div class="gtr0"> 或 <div class="gtr1"> 开始
+    blocks = re.split(r'<div class="gtr[01]"[^>]*>', html)
+    if len(blocks) <= 1:
+        # 备用: 直接扫描 SEARCH_LINK_RE
+        pass
+
+    for block in blocks[1:]:
+        if len(results) >= count:
+            break
+        link_m = SEARCH_LINK_RE.search(block)
+        if not link_m:
+            continue
+        gid = link_m.group(1)
+        token = link_m.group(2)
+        if gid in seen:
+            continue
+        seen.add(gid)
+
+        # 提取标题 (it5 中的链接文本)
+        title_m = re.search(r'<div class="it5"[^>]*>\s*<a[^>]*>([^<]+)</a>', block, re.IGNORECASE)
+        title = title_m.group(1).strip() if title_m else "N/A"
+
+        # 提取分类/标签信息
+        category = ""
+        cat_m = re.search(r'<div class="cs"[^>]*>\s*<div[^>]*>([^<]+)</div>', block, re.IGNORECASE)
+        if cat_m:
+            category = cat_m.group(1).strip()
+
+        results.append({
+            "id": gid,
+            "title": title,
+            "pages": "?",
+            "category": category,
+            "url": f"https://{domain}/g/{gid}/{token}/",
+            "token": token,
+        })
+
+    # 如果 block 分割失败，回退到简单扫描
+    if not results:
+        for m in SEARCH_LINK_RE.finditer(html):
+            if len(results) >= count:
+                break
+            gid = m.group(1)
+            if gid in seen:
+                continue
+            seen.add(gid)
+            token = m.group(2)
+            # 尝试在附近找标题
+            start = max(0, m.start() - 500)
+            end = min(len(html), m.end() + 500)
+            context = html[start:end]
+            title_m = re.search(r'<a[^>]*>([^<]{3,120})</a>', context, re.IGNORECASE)
+            title = title_m.group(1).strip() if title_m else "N/A"
+            results.append({
+                "id": gid,
+                "title": title,
+                "pages": "?",
+                "category": "",
+                "url": f"https://{domain}/g/{gid}/{token}/",
+                "token": token,
+            })
+
+    if verbose:
+        print(f"   找到 {len(results)} 个结果")
+        for r in results[:10]:
+            print(f"   {r['id']:>8} | {r['title'][:60]}")
+
+    return results
+
+
 def download_gallery(gid, token, output_dir=None, proxy=None, cookies=None,
                      max_workers=6, verbose=True):
     """下载完整画廊"""
@@ -414,9 +505,12 @@ def main():
     parser.add_argument("-o", "--output", metavar="DIR", help="输出目录")
     parser.add_argument("-t", "--threads", type=int, default=6, help="下载线程数")
     parser.add_argument("-q", "--quiet", action="store_true", help="安静模式")
+    parser.add_argument("--search", metavar="QUERY", help="关键词搜索")
+    parser.add_argument("--count", type=int, default=20, help="搜索结果数")
     parser.add_argument("--check", action="store_true", help="连通性检测")
     parser.add_argument("--download-all", action="store_true", help="下载标签搜索的全部结果")
     parser.add_argument("--cookie-file", metavar="FILE", help="从文件读取 cookie")
+    parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
     if args.check:
@@ -449,6 +543,20 @@ def main():
         cookies = _CREDS["exhentai_cookies"]
         if not args.quiet:
             print("🔐 已加载 ExHentai 凭证")
+
+    # ── 关键词搜索模式 ──
+    if args.search:
+        galleries = search_galleries(
+            args.search, proxy=proxy, cookies=cookies,
+            count=args.count, verbose=not args.quiet and not args.json)
+        if args.json:
+            print(json.dumps(galleries, ensure_ascii=False, indent=2))
+            return
+        if not galleries:
+            print("❌ 未找到结果")
+            sys.exit(1)
+        print(f"\n💡 下载单个: python3 ehentai_dl.py {galleries[0]['url']}")
+        return
 
     if not args.url:
         parser.print_help()
