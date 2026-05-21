@@ -317,21 +317,22 @@ def find_working_search_mirror(proxy=None):
     return None, None
 
 
-def search_galleries(query, proxy=None, count=20, sort="popular", verbose=True):
+def search_galleries(query, proxy=None, count=20, sort="popular", page=1, verbose=True):
     base_url, is_api = find_working_search_mirror(proxy)
     if not base_url:
         print("❌ 未找到可用的搜索镜像端点")
         return []
     if is_api:
-        return _search_via_api(base_url, query, proxy, count, sort, verbose)
+        return _search_via_api(base_url, query, proxy, count, sort, page, verbose)
     else:
-        return _search_via_html(base_url, query, proxy, count, sort, verbose)
+        return _search_via_html(base_url, query, proxy, count, sort, page, verbose)
 
 
-def _search_via_api(api_base, query, proxy, count, sort, verbose):
-    url = f"{api_base}/search?query={quote_plus(query)}&sort={sort}"
+def _search_via_api(api_base, query, proxy, count, sort, page, verbose):
+    url = f"{api_base}/search?query={quote_plus(query)}&sort={sort}&page={page}"
     if verbose:
-        print(f"🔍 搜索: {query} (API) → {api_base}")
+        p = f" (第{page}页)" if page > 1 else ""
+        print(f"🔍 搜索: {query} (API) → {api_base}{p}")
     resp = _curl_get(url, proxy=proxy, timeout=20, accept="application/json")
     if not resp:
         return []
@@ -348,17 +349,21 @@ def _search_via_api(api_base, query, proxy, count, sort, verbose):
         title = r.get("title", {}).get("pretty") or r.get("title", {}).get("english") or "N/A"
         pages = r.get("num_pages", "?")
         artists = [t["name"] for t in r.get("tags", []) if t.get("type") == "artist"]
-        galleries.append({"id": gid, "title": title, "pages": pages, "artists": artists})
+        language_tags = [t["name"] for t in r.get("tags", []) if t.get("type") == "language"]
+        language = language_tags[0] if language_tags else ""
+        galleries.append({"id": gid, "title": title, "pages": pages, "artists": artists, "language": language})
         if verbose:
             art_str = f" [{', '.join(artists)}]" if artists else ""
-            print(f"   {gid:>6} | {title[:60]} | {pages}p{art_str}")
+            lang_str = f" ({language})" if language else ""
+            print(f"   {gid:>6} | {title[:60]} | {pages}p{art_str}{lang_str}")
     return galleries
 
 
-def _search_via_html(base_url, query, proxy, count, sort, verbose):
-    url = f"{base_url}/search/?q={quote_plus(query)}&sort={sort}"
+def _search_via_html(base_url, query, proxy, count, sort, page, verbose):
+    url = f"{base_url}/search/?q={quote_plus(query)}&sort={sort}&page={page}"
     if verbose:
-        print(f"🔍 搜索: {query} (HTML) → {base_url}")
+        p = f" (第{page}页)" if page > 1 else ""
+        print(f"🔍 搜索: {query} (HTML) → {base_url}{p}")
     html = _curl_get(url, proxy=proxy, timeout=20)
     if not html:
         return []
@@ -401,6 +406,25 @@ def _search_via_html(base_url, query, proxy, count, sort, verbose):
             print(f"   {g['id']:>6} | {g['title'][:60]}")
 
     return galleries
+
+
+# ── 中文过滤 ──────────────────────────────────────────────
+CHINESE_LANG_TAGS = {"chinese", "translated", "chinese-translated"}
+CHINESE_TITLE_PATTERNS = [
+    "chinese", "中文", "漢化", "汉化", "中翻", "中国翻訳",
+    "中文本", "中国語", "chinese translated",
+]
+
+
+def _is_chinese_gallery(g):
+    """判断画廊是否为中文 (优先用 API 返回的 language 字段，回退到标题匹配)"""
+    lang = g.get("language", "").lower().replace(" ", "-")
+    if lang in CHINESE_LANG_TAGS or "chinese" in lang:
+        return True
+    if lang == "translated":
+        return True
+    title = g.get("title", "").lower()
+    return any(p in title for p in CHINESE_TITLE_PATTERNS)
 
 
 def random_gallery(query=None, proxy=None, verbose=True):
@@ -1170,6 +1194,7 @@ def main():
     parser.add_argument("--random", action="store_true", help="随机推荐")
     parser.add_argument("--tag", metavar="TAG", help="搜索过滤 (配合 --search/--random)")
     parser.add_argument("--count", type=int, default=20, help="搜索结果数量")
+    parser.add_argument("--page", type=int, default=1, help="搜索页码")
     parser.add_argument("--sort", choices=["popular", "recent"], default="popular", help="排序")
     parser.add_argument("--chinese", action="store_true", help="搜索时过滤只显示中文结果")
     parser.add_argument("--artist-dl", metavar="ARTIST", help="搜索并下载某艺术家的全部作品")
@@ -1212,7 +1237,9 @@ def main():
                 sys.exit(1)
         else:
             galleries = search_galleries(query, proxy=proxy, count=args.count,
-                                         sort=args.sort, verbose=not args.quiet)
+                                         sort=args.sort, page=args.page, verbose=not args.quiet)
+            if args.chinese:
+                galleries = [g for g in galleries if _is_chinese_gallery(g)]
             if args.json:
                 print(json.dumps(galleries, ensure_ascii=False, indent=2))
             if not galleries:
@@ -1227,7 +1254,7 @@ def main():
         print(f"🎨 搜索并下载 {name} 全部作品...")
         galleries = search_galleries(name, proxy=proxy, count=100, verbose=not args.quiet)
         if args.chinese:
-            galleries = [g for g in galleries if 'chinese' in g.get('title','').lower() or '中文' in g.get('title','') or '漢化' in g.get('title','')]
+            galleries = [g for g in galleries if _is_chinese_gallery(g)]
             print(f"   中文过滤后: {len(galleries)} 个")
         if not galleries:
             print("❌ 未找到作品")

@@ -51,7 +51,11 @@ def print_help():
     print("  --site SITES              限制搜索站点: nhentai, jmcomic, ehentai")
     print("                             逗号分隔, 支持简写: nh, jm, eh")
     print("  --count N                 每站结果数 (默认 20)")
+    print("  --page N                  搜索页码 (默认 1)")
+    print("  --sort SORT               排序: popular / recent")
     print("  --json                    JSON 输出")
+    print("  --no-web-verify           关闭 web 搜索双向验证 (默认开启)")
+    print("  --web-threshold FLOAT     web 验证触发的最小相似度 (默认 0.5)")
     print()
     print("━━━ 随机推荐 ━━━")
     print("  --random                  三站随机推荐")
@@ -174,6 +178,28 @@ def main():
             except (ValueError, IndexError, TypeError):
                 pass
 
+        # --page
+        page = 1
+        if '--page' in args:
+            try:
+                p_idx = args.index('--page')
+                if p_idx + 1 < len(args):
+                    page = int(args[p_idx + 1])
+            except (ValueError, IndexError, TypeError):
+                pass
+
+        # --sort
+        sort = "popular"
+        if '--sort' in args:
+            try:
+                s_idx = args.index('--sort')
+                if s_idx + 1 < len(args):
+                    sort = args[s_idx + 1]
+                    if sort not in ("popular", "recent"):
+                        sort = "popular"
+            except (ValueError, IndexError):
+                pass
+
         # --proxy
         proxy = None
         if '-p' in args:
@@ -195,6 +221,16 @@ def main():
         json_out = '--json' in args
         # --quiet
         quiet = '-q' in args or '--quiet' in args
+        # --web-verify (默认开启)
+        web_verify = '--no-web-verify' not in args
+        web_threshold = 0.5
+        if '--web-threshold' in args:
+            try:
+                wt_idx = args.index('--web-threshold')
+                if wt_idx + 1 < len(args):
+                    web_threshold = float(args[wt_idx + 1])
+            except (ValueError, IndexError, TypeError):
+                pass
 
         # 导入搜索引擎
         sys.path.insert(0, SCRIPT_DIR)
@@ -236,8 +272,11 @@ def main():
                 sys.exit(1)
 
             result = multi_search(query, proxy=proxy, count=count,
+                                  page=page, sort=sort,
                                   sites=sites, verbose=not quiet,
-                                  merge=True)
+                                  merge=True,
+                                  web_verify=web_verify,
+                                  web_threshold=web_threshold)
 
             if json_out:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -267,9 +306,11 @@ def main():
         if skip_next:
             skip_next = False
             continue
-        if a in ('--search', '--site', '--tag', '--count', '--proxy', '-p',
-                 '--jm-search', '--random', '--json', '--quiet', '-q'):
-            if a in ('--search', '--site', '--tag', '--count', '--proxy', '-p'):
+        if a in ('--search', '--site', '--tag', '--count', '--page', '--sort',
+                 '--proxy', '-p', '--jm-search', '--random', '--json', '--quiet', '-q',
+                 '--no-web-verify', '--web-threshold'):
+            if a in ('--search', '--site', '--tag', '--count', '--page', '--sort',
+                     '--proxy', '-p', '--web-threshold'):
                 skip_next = True
             continue
         if a.startswith('-'):

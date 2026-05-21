@@ -70,7 +70,7 @@ def download_album(album_id, proxy=None, output_dir=None, image_format="png", ve
         return False
 
 
-def search_albums(query, proxy=None, count=20, verbose=True):
+def search_albums(query, proxy=None, count=20, page=1, verbose=True):
     ok, ver = _check_jmcomic()
     if not ok:
         print("❌ 未安装 jmcomic 库, 安装: pip install jmcomic")
@@ -80,9 +80,9 @@ def search_albums(query, proxy=None, count=20, verbose=True):
         client = jmcomic.JmOption.default().new_jm_client()
         if proxy:
             client = jmcomic.JmOption.construct({"client": {"proxy": proxy}}).new_jm_client()
-        if verbose: print(f"🔍 禁漫搜索: {query}")
-        page = client.search_site(query, page=1)
-        results = list(page)[:count]
+        if verbose: print(f"🔍 禁漫搜索: {query} (第{page}页)")
+        page_obj = client.search_site(query, page=page)
+        results = list(page_obj)[:count]
         if verbose: print(f"   找到 {len(results)} 个结果")
         galleries = []
         for r in results:
@@ -122,6 +122,7 @@ def main():
     parser.add_argument("-f", "--format", choices=["png","jpg","webp"], default="png", help="格式")
     parser.add_argument("--search", metavar="QUERY", help="搜索")
     parser.add_argument("--count", type=int, default=20, help="搜索结果数")
+    parser.add_argument("--page", type=int, default=1, help="搜索页码")
     parser.add_argument("--random", action="store_true", help="随机下载")
     parser.add_argument("--tag", metavar="TAG", help="配合 --random 使用")
     parser.add_argument("--check", action="store_true", help="检测")
@@ -135,7 +136,7 @@ def main():
 
     if args.search or (args.random and args.tag):
         query = args.search or args.tag
-        galleries = search_albums(query, proxy=args.proxy, count=args.count, verbose=not args.quiet and not args.json)
+        galleries = search_albums(query, proxy=args.proxy, count=args.count, page=args.page, verbose=not args.quiet and not args.json)
         if args.json:
             import json as _json
             print(_json.dumps(galleries, ensure_ascii=False, indent=2))

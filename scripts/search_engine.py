@@ -122,7 +122,7 @@ ALL_SITES = ["nhentai", "jmcomic", "ehentai"]
 # 单站搜索 (包装器)
 # ═══════════════════════════════════════════════════════════
 
-def _search_one(site_name, query, proxy=None, count=20, cookies=None, verbose=False):
+def _search_one(site_name, query, proxy=None, count=20, page=1, sort="popular", cookies=None, verbose=False):
     """在单个站点搜索，返回 (site_name, results_list, error_str)"""
     meta = SITE_META[site_name]
     fn = meta["loader"]()
@@ -132,7 +132,13 @@ def _search_one(site_name, query, proxy=None, count=20, cookies=None, verbose=Fa
     site_proxy = proxy if meta["needs_proxy"] else None
     start = time.time()
     try:
-        results = fn(query, proxy=site_proxy, count=count, verbose=verbose)
+        # 各站点搜索函数签名不同，按需传参
+        if site_name == "nhentai":
+            results = fn(query, proxy=site_proxy, count=count, sort=sort, page=page, verbose=verbose)
+        elif site_name == "ehentai":
+            results = fn(query, proxy=site_proxy, cookies=cookies, count=count, page=page, verbose=verbose)
+        else:
+            results = fn(query, proxy=site_proxy, count=count, page=page, verbose=verbose)
         elapsed = time.time() - start
         if verbose:
             print(f"  {meta['icon']} {site_name}: {len(results)} 结果 ({elapsed:.1f}s)")
@@ -189,16 +195,157 @@ def _title_similarity(a, b):
     return difflib.SequenceMatcher(None, ca, cb).ratio()
 
 
-def _merge_results(all_results, verbose=False):
+# ═══════════════════════════════════════════════════════════
+# Web 搜索双向验证 (v2 新增)
+# ═══════════════════════════════════════════════════════════
+
+def _web_search(query, timeout=8):
+    """DuckDuckGo HTML 搜索，返回结果摘要文本列表"""
+    import subprocess
+    url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    cmd = ["curl", "-sL", "--max-time", str(timeout), "--connect-timeout", "5",
+           "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+           "-H", "Accept: text/html",
+           url]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 3)
+        if result.returncode != 0 or len(result.stdout) < 200:
+            return []
+        html = result.stdout
+
+        # 提取搜索结果摘要 (class="result__snippet")
+        snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
+        if not snippets:
+            snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</', html, re.DOTALL)
+
+        # 清理 HTML 标签
+        clean = []
+        for s in snippets[:10]:
+            s = re.sub(r'<[^>]+>', ' ', s)
+            s = re.sub(r'\s+', ' ', s).strip()
+            if len(s) > 10:
+                clean.append(s)
+        return clean
+    except Exception:
+        return []
+
+
+def _web_verify_match(item_a, item_b, score, verbose=False):
+    """
+    当标题相似度在不确定区间时，用 web 搜索验证是否为同一本子。
+
+    参数:
+      item_a, item_b: 标准化的结果 dict
+      score:          当前标题相似度 (0-1)
+      verbose:        是否输出调试信息
+
+    返回:
+      (is_match: bool, confidence: str)
+    """
+    # 快速拒绝: 来源相同且 ID 不同 → 肯定不是同一本
+    if item_a["source"] == item_b["source"] and item_a["site_id"] != item_b["site_id"]:
+        return False, "同站不同ID"
+
+    # 提取共同的关键词
+    def _keywords(title):
+        words = re.findall(r'[\w\u4e00-\u9fff]{2,}', title.lower())
+        # 过滤常见无意义词
+        stop = {"the", "and", "of", "in", "to", "a", "is", "no", "de", "la",
+                "digital", "dl", "版", "翻譯", "漢化", "修正", "無修正"}
+        return {w for w in words if w not in stop}
+
+    kw_a = _keywords(item_a.get("title", ""))
+    kw_b = _keywords(item_b.get("title", ""))
+
+    # 中文标题特殊处理: 提取日文原作名的罗马字部分
+    romaji_a = re.findall(r'[a-zA-Z]{4,}', item_a.get("title", ""))
+    romaji_b = re.findall(r'[a-zA-Z]{4,}', item_b.get("title", ""))
+
+    common_kw = kw_a & kw_b
+    common_romaji = set(romaji_a) & set(romaji_b)
+
+    # 构造搜索查询
+    queries = []
+
+    # 策略1: 用 nhentai ID + 共同关键词搜索
+    nh_item = item_a if item_a["source"] == "nhentai" else (item_b if item_b["source"] == "nhentai" else None)
+    other_item = item_b if nh_item is item_a else item_a
+
+    if nh_item and common_romaji:
+        q = f'nhentai {nh_item["site_id"]} {" ".join(list(common_romaji)[:3])}'
+        queries.append(("nhentai_id", q))
+    elif nh_item and common_kw:
+        q = f'nhentai {nh_item["site_id"]} {" ".join(list(common_kw)[:4])}'
+        queries.append(("nhentai_id", q))
+
+    # 策略2: 用作者名 + 共同罗马字
+    artists_a = set(item_a.get("artists", []))
+    artists_b = set(item_b.get("artists", []))
+    common_artists = artists_a & artists_b
+    if common_artists and common_romaji:
+        # 用罗马字作者名
+        artist_romaji = [a for a in common_artists if re.match(r'^[a-zA-Z]', a)]
+        if artist_romaji:
+            q = f'{" ".join(artist_romaji[:2])} {" ".join(list(common_romaji)[:3])}'
+            queries.append(("artist_romaji", q))
+
+    # 策略3: 用日文/中文关键标题词
+    if common_kw and not queries:
+        q = f'{" ".join(list(common_kw)[:5])}'
+        queries.append(("keywords", q))
+
+    if not queries:
+        return False, "无可搜索关键词"
+
+    # 执行搜索
+    for strategy, query in queries:
+        snippets = _web_search(query, timeout=8)
+        if not snippets:
+            continue
+
+        # 检查搜索结果中是否同时提到两个站点的作品
+        id_a = item_a["site_id"]
+        id_b = item_b["site_id"]
+        title_a_frag = item_a.get("title", "")[:30].lower()
+        title_b_frag = item_b.get("title", "")[:30].lower()
+
+        combined = " ".join(snippets).lower()
+
+        hits_a = id_a in combined or title_a_frag in combined
+        hits_b = id_b in combined or title_b_frag in combined
+
+        if hits_a and hits_b:
+            if verbose:
+                print(f"  🌐 web验证 ✅ [{strategy}] {item_a['source']}:{id_a} ↔ {item_b['source']}:{id_b}")
+            return True, f"web:{strategy}"
+
+    if verbose:
+        print(f"  🌐 web验证 ❌ {item_a['source']}:{id_a} ≉ {item_b['source']}:{id_b} (score={score:.2f})")
+    return False, f"web:no_match"
+
+
+def _merge_results(all_results, web_verify=False, web_threshold=0.5, verbose=False):
     """
     合并去重三站搜索结果。
     策略:
       1. 按标题相似度 > 0.85 判定为同一本子
       2. 同一本子出现多站，保留信息最全的那个 (有页数 > 无页数 > 标题更长)
       3. 标注 cross_site 属性
+      4. 相似度在 [web_threshold, 0.85] 之间时，用 web 搜索双向验证
     """
     if not all_results:
         return []
+
+    # 预检 web 搜索可用性 (只做一次)
+    if web_verify:
+        test_results = _web_search("test", timeout=4)
+        if not test_results:
+            if verbose:
+                print("  🌐 web 搜索不可达，跳过双向验证")
+            web_verify = False
+
+    web_verified = 0
+    web_confirmed = 0
 
     merged = []
     seen_groups = []  # [[result1, result2], ...] 同一本子的所有版本
@@ -208,16 +355,33 @@ def _merge_results(all_results, verbose=False):
         # 找到最相似的已有组
         best_group = None
         best_score = 0
+        best_existing = None
         for group in seen_groups:
             for existing in group:
                 score = _title_similarity(title, existing.get("title", ""))
                 if score > best_score:
                     best_score = score
                     best_group = group
+                    best_existing = existing
 
+        matched = False
+
+        # 高置信度: 相似度 > 0.85，直接合并
         if best_score > 0.85 and best_group is not None:
             best_group.append(item)
-        else:
+            matched = True
+
+        # 不确定区间: web_verify 启用时，尝试 web 搜索确认 (最多 30 次)
+        elif web_verify and best_score >= web_threshold and best_group is not None and web_verified < 30:
+            web_verified += 1
+            is_match, reason = _web_verify_match(best_existing, item, best_score, verbose=verbose)
+            if is_match:
+                web_confirmed += 1
+                best_group.append(item)
+                matched = True
+                item["_web_match"] = reason
+
+        if not matched:
             new_group = [item]
             seen_groups.append(new_group)
             merged.append(item)
@@ -246,8 +410,13 @@ def _merge_results(all_results, verbose=False):
 
     if verbose:
         dupes = len(all_results) - len(final)
+        parts = []
         if dupes > 0:
-            print(f"  📎 去重: {dupes} 个重复结果已合并")
+            parts.append(f"{dupes} 个重复结果已合并")
+        if web_verified > 0:
+            parts.append(f"web验证 {web_verified} 对, 确认 {web_confirmed} 对")
+        if parts:
+            print(f"  📎 去重: {', '.join(parts)}")
 
     return final
 
@@ -287,8 +456,8 @@ def _load_cookies():
         return None
 
 
-def multi_search(query, *, proxy=None, count=20, sites=None,
-                 verbose=True, merge=True):
+def multi_search(query, *, proxy=None, count=20, page=1, sort="popular", sites=None,
+                 verbose=True, merge=True, web_verify=True, web_threshold=0.5):
     """
     三站并行搜索 (主入口)
 
@@ -296,9 +465,13 @@ def multi_search(query, *, proxy=None, count=20, sites=None,
       query:   搜索关键词
       proxy:   代理地址 (None=自动发现)
       count:   每站结果数上限
+      page:    搜索页码 (默认 1)
+      sort:    排序方式 (popular/recent, 仅 nhentai 支持)
       sites:   站点列表 (None=全部三站), 如 ["nhentai", "jmcomic"]
       verbose: 是否输出进度
       merge:   是否去重合并
+      web_verify: 是否启用 web 搜索双向验证
+      web_threshold: web 验证触发的最小相似度 (默认 0.5)
 
     返回:
       {
@@ -332,7 +505,7 @@ def multi_search(query, *, proxy=None, count=20, sites=None,
 
     with ThreadPoolExecutor(max_workers=len(sites)) as pool:
         futures = {
-            pool.submit(_search_one, site, query, proxy, count, cookies, verbose=False): site
+            pool.submit(_search_one, site, query, proxy, count, page, sort, cookies, verbose=False): site
             for site in sites
         }
         for f in as_completed(futures):
@@ -354,7 +527,8 @@ def multi_search(query, *, proxy=None, count=20, sites=None,
 
     # 去重
     if merge:
-        final = _merge_results(all_results, verbose=verbose)
+        final = _merge_results(all_results, web_verify=web_verify,
+                               web_threshold=web_threshold, verbose=verbose)
     else:
         final = all_results
 
@@ -388,7 +562,7 @@ def random_gallery(query=None, *, proxy=None, count=50, sites=None, verbose=True
     """
     search_query = query or "chinese"
     result = multi_search(search_query, proxy=proxy, count=count,
-                          sites=sites, verbose=verbose, merge=True)
+                          sites=sites, verbose=verbose, merge=True, sort="popular")
     if not result["results"]:
         if verbose:
             print("❌ 没有找到任何画廊")
@@ -449,10 +623,15 @@ def main():
     parser.add_argument("--site", metavar="SITES",
                         help="限制站点, 逗号分隔: nhentai,jmcomic,ehentai (默认全站)")
     parser.add_argument("--count", type=int, default=20, help="每站结果数")
+    parser.add_argument("--page", type=int, default=1, help="搜索页码")
+    parser.add_argument("--sort", choices=["popular", "recent"], default="popular", help="排序")
     parser.add_argument("-p", "--proxy", metavar="PROXY", help="代理地址")
     parser.add_argument("-q", "--quiet", action="store_true", help="安静模式")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     parser.add_argument("--no-merge", action="store_true", help="不去重")
+    parser.add_argument("--no-web-verify", action="store_true", help="关闭 web 搜索双向验证 (默认开启)")
+    parser.add_argument("--web-threshold", type=float, default=0.5,
+                        help="web 验证触发的最小相似度 (默认 0.5)")
     args = parser.parse_args()
 
     # 解析站点
@@ -501,8 +680,11 @@ def main():
         sys.exit(1)
 
     result = multi_search(query, proxy=args.proxy, count=args.count,
+                          page=args.page, sort=args.sort,
                           sites=sites, verbose=not args.quiet,
-                          merge=not args.no_merge)
+                          merge=not args.no_merge,
+                          web_verify=not args.no_web_verify,
+                          web_threshold=args.web_threshold)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

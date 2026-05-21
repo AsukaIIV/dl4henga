@@ -256,12 +256,15 @@ SEARCH_TITLE_RE = re.compile(r'<div class="it5"[^>]*>\s*<a[^>]*>([^<]+)</a>', re
 SEARCH_CATEGORY_RE = re.compile(r'<div class="cs"[^>]*>\s*<div[^>]*>([^<]+)</div>', re.IGNORECASE)
 
 
-def search_galleries(query, proxy=None, cookies=None, count=20, verbose=True):
+def search_galleries(query, proxy=None, cookies=None, count=20, page=1, verbose=True):
     """E-Hentai 关键词搜索 (?f_search=), 返回标准化结果列表 [{id, title, pages, url}, ...]"""
     domain = "e-hentai.org"
     url = f"https://{domain}/?f_search={quote_plus(query)}"
+    if page > 1:
+        url += f"&page={page - 1}"  # E-Hentai page 从 0 开始
     if verbose:
-        print(f"🔍 E-Hentai 搜索: {query}")
+        p = f" (第{page}页)" if page > 1 else ""
+        print(f"🔍 E-Hentai 搜索: {query}{p}")
     html = _curl_get(url, proxy=proxy, cookies=cookies, timeout=20)
     if not html:
         return []
@@ -507,6 +510,7 @@ def main():
     parser.add_argument("-q", "--quiet", action="store_true", help="安静模式")
     parser.add_argument("--search", metavar="QUERY", help="关键词搜索")
     parser.add_argument("--count", type=int, default=20, help="搜索结果数")
+    parser.add_argument("--page", type=int, default=1, help="搜索页码")
     parser.add_argument("--check", action="store_true", help="连通性检测")
     parser.add_argument("--download-all", action="store_true", help="下载标签搜索的全部结果")
     parser.add_argument("--cookie-file", metavar="FILE", help="从文件读取 cookie")
@@ -548,7 +552,7 @@ def main():
     if args.search:
         galleries = search_galleries(
             args.search, proxy=proxy, cookies=cookies,
-            count=args.count, verbose=not args.quiet and not args.json)
+            count=args.count, page=args.page, verbose=not args.quiet and not args.json)
         if args.json:
             print(json.dumps(galleries, ensure_ascii=False, indent=2))
             return
