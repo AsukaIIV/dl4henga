@@ -1,9 +1,0 @@
-__pycache__
-*.pyc
-.env
-.DS_Store
-node_modules
-.git
-.Trash
-*.sqlite*
-*.db

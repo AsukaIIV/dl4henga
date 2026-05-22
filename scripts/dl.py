@@ -129,7 +129,11 @@ def print_help():
     print("━━━ 工具 ━━━")
     print("  --check                    四站全检")
     print("  --setup                    凭证配置")
+    print("  --update, --upgrade        自更新 (git pull)")
     print("  --help, -h                 帮助")
+    print()
+    print("━━━ 仓库 ━━━")
+    print("  https://github.com/AsukaIIV/dl4henga")
     print()
     print("━━━ 示例 ━━━")
     print("  python3 dl.py --search \"毛玉牛乳\"")
@@ -178,6 +182,22 @@ def main():
         from credentials import setup_credentials, check_credentials
         check_credentials()
         setup_credentials()
+        return
+
+    # --update / --upgrade
+    if '--update' in args or '--upgrade' in args:
+        repo_dir = os.path.dirname(SCRIPT_DIR)  # dl4henga root
+        git_dir = os.path.join(repo_dir, '.git')
+        if os.path.isdir(git_dir):
+            print("🔄 git pull ...")
+            r = subprocess.run(["git", "-C", repo_dir, "pull"], timeout=30)
+            if r.returncode == 0:
+                print("✅ 已更新到最新版本")
+            else:
+                print("⚠️  git pull 失败")
+        else:
+            print("💡 未检测到 git 仓库，请手动更新:")
+            print("   git clone https://github.com/AsukaIIV/dl4henga")
         return
 
     # ── 搜索 / 随机模式 ────────────────────────────────────
@@ -378,7 +398,7 @@ def main():
             continue
         if a in ('--search', '--site', '--tag', '--count', '--page', '--sort',
                  '--proxy', '-p', '--jm-search', '--random', '--json', '--quiet', '-q',
-                 '--no-web-verify', '--web-threshold'):
+                 '--no-web-verify', '--web-threshold', '--update', '--upgrade'):
             if a in ('--search', '--site', '--tag', '--count', '--page', '--sort',
                      '--proxy', '-p', '--web-threshold'):
                 skip_next = True
