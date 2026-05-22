@@ -11,7 +11,6 @@ description: >
   3. 用户要求搜索/下载 nhentai/禁漫/E站 的本子
   4. 用户要求随机推荐/下载本子
   5. 用户提及 "nhentai" "禁漫" "ehentai" "exhentai" 等画师名
-  6. 用户要求更新镜像或配置凭证
 ---
 
 # dl4henga — 三站下载工具集 v2
@@ -138,14 +137,9 @@ python3 scripts/dl.py --random --site jm
 |---|---|---|---|
 | 需要登录 | ❌ | exhentai 需 cookie | ❌ |
 | 需要代理 | 需要 | 需要 | 不需要 |
-| 搜索 | ✅ | ✅ | ✅ |
-| 随机推荐 | ✅ | ✅ | ✅ |
-| 全集下载 | ✅ `--artist-dl` | tag `--download-all` | - |
-| 逐页下载 | ✅ `--dl` | ✅ 自动 | ✅ 自动 |
-| Archive (zip) | - | ✅ 优先 | - |
-| 种子/BT 提取 | ✅ 磁力+种子 | - | - |
-| JSON 输出 | ✅ | ✅ | ✅ |
-| 代理自发现 | ✅ | ✅ | ✅ |
+| 搜索 | ✅ | ✅ (v2) | ✅ |
+| 随机推荐 | ✅ | ✅ (v2) | ✅ |
+| 全集下载 | ✅ | - | - |
 
 ---
 
@@ -158,11 +152,6 @@ python3 scripts/dl.py --random --site jm
 | `--random` | **三站随机推荐** (v2: 跨站) |
 | `--tag TAG` | 配合 --search/--random 使用 |
 | `--count N` | 每站搜索结果数 (默认 20) |
-| `--page N` | 搜索页码 (默认 1) |
-| `--sort SORT` | 排序: popular (最热) / recent (最新) |
-| `--chinese` | 过滤只显示中文结果 (nhentai 支持) |
-| `--no-web-verify` | 关闭 web 搜索双向验证 (默认开启) |
-| `--web-threshold F` | web 验证触发的相似度下限 (默认 0.5) |
 | `--json` | JSON 格式输出 |
 | `-p, --proxy` | 代理地址 |
 | `-o, --output` | 输出目录 |
