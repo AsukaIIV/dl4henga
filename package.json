@@ -1,0 +1,36 @@
+{
+  "name": "dl4henga",
+  "version": "2.0.0",
+  "description": "四站同人志下载工具 — nhentai / E-Hentai / JMComic / picacg 统一搜索与下载",
+  "keywords": [
+    "nhentai",
+    "e-hentai",
+    "exhentai",
+    "jmcomic",
+    "picacg",
+    "doujinshi",
+    "download",
+    "comic",
+    "manga"
+  ],
+  "bin": {
+    "dl4henga": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "scripts/",
+    "SKILL.md",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "echo '📦 dl4henga v2 — 四站下载工具' && echo '   依赖: pip3 install jmcomic cloudscraper curl_cffi' && echo '   可选: npm i -g pica-cli (picacg 下载加速)' && echo '   npx dl4henga --help'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/dl4henga"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=14"
+  }
+}

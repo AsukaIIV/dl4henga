@@ -6,12 +6,13 @@ description: >
 
 触发规则 (任一满足即激活):
   1. URL 含 nhentai.net / nhentai.to / nhentai.xxx / e-hentai.org / exhentai.org /
-     18comic.vip / jmcomic 等域名
-  2. 纯数字 ID (1-6位) 或 JM+数字 ID
-  3. 用户要求搜索/下载 nhentai/禁漫/E站 的本子
+     18comic.vip / jmcomic / picacg / picacomic 等域名
+  2. 纯数字 ID (1-6位) 或 JM+数字 ID 或 24位 hex ID
+  3. 用户要求搜索/下载 nhentai/禁漫/E站/哔咔 的本子
   4. 用户要求随机推荐/下载本子
-  5. 用户提及 "nhentai" "禁漫" "ehentai" "exhentai" 等画师名
+  5. 用户提及 "nhentai" "禁漫" "ehentai" "exhentai" "picacg" 等画师名
   6. 用户要求更新镜像或配置凭证
+  7. 用户询问如何部署/安装/发布 dl4henga
 ---
 
 # dl4henga — 四站下载工具集 v2
@@ -31,7 +32,131 @@ description: >
 ## 依赖安装
 
 ```bash
-pip install jmcomic cloudscraper curl_cffi
+# Python 依赖 (必须)
+pip3 install jmcomic cloudscraper curl_cffi
+
+# 可选: picacg 下载加速
+npm install -g pica-cli
+```
+
+## npx 运行 (推荐)
+
+```bash
+# 无需安装，即时运行
+npx dl4henga search "毛玉牛乳"
+npx dl4henga --check
+npx dl4henga 604256
+
+# 或全局安装后直接用
+npm install -g dl4henga
+dl4henga search "毛玉牛乳"
+```
+
+---
+
+## 部署指南
+
+### 方式一: npx 即时运行 (零安装)
+
+```bash
+# 确保 Node.js ≥ 14 和 Python ≥ 3.8
+node --version   # ≥ v14
+python3 --version # ≥ 3.8
+
+# 安装 Python 依赖
+pip3 install jmcomic cloudscraper curl_cffi
+
+# 直接运行 (npx 自动下载并缓存)
+npx dl4henga --help
+npx dl4henga search "关键词"
+```
+
+> npx 会将包缓存到 `~/.npm/_npx/`，下次运行秒启动。
+
+### 方式二: npm 全局安装
+
+```bash
+npm install -g dl4henga
+dl4henga --help
+dl4henga search "关键词" --site nh,eh
+```
+
+### 方式三: Git 克隆 + npm link (开发/离线)
+
+```bash
+git clone https://github.com/user/dl4henga.git
+cd dl4henga
+
+# 安装 Python 依赖
+pip3 install jmcomic cloudscraper curl_cffi
+
+# npm link 创建全局符号链接
+npm link
+
+# 现在可以在任何目录使用
+dl4henga --help
+dl4henga search "毛玉牛乳"
+```
+
+### 方式四: 发布到 npm (分发)
+
+```bash
+cd dl4henga
+
+# 首次发布
+npm login
+npm publish
+
+# 更新版本后发布
+npm version patch   # 或 minor / major
+npm publish
+```
+
+发布后用户即可 `npx dl4henga` 或 `npm install -g dl4henga`。
+
+### 方式五: 作为 AI Skill 部署
+
+将此目录放到 AI 工具的 skills 路径下:
+
+```bash
+# DeepSeek TUI
+cp -r dl4henga ~/.deepseek/skills/dl4henga
+
+# Claude Code / Claude Desktop
+cp -r dl4henga ~/.claude/skills/dl4henga
+```
+
+AI 助手读取 `SKILL.md` 后会自动获得四站搜索和下载能力。
+
+### 环境要求
+
+| 组件 | 版本 | 用途 |
+|------|------|------|
+| Node.js | ≥ 14 | npx 运行时 |
+| Python | ≥ 3.8 | 核心脚本 |
+| curl | 系统自带 | HTTP 请求 |
+| pip 包 | jmcomic, cloudscraper, curl_cffi | 站点访问 |
+| pica-cli (可选) | latest | picacg 下载加速 |
+
+### 项目结构
+
+```
+dl4henga/
+├── cli.js              ← npx 入口 (Node)
+├── package.json        ← npm 包描述
+├── README.md           ← 项目说明
+├── SKILL.md            ← AI Skill 定义 (本文档)
+├── .npmignore
+└── scripts/            ← Python 核心
+    ├── dl.py           ← 统一路由 + 凭证横幅
+    ├── search_engine.py ← 并行搜索 + 去重 + web 验证
+    ├── nhentai_dl.py   ← nhentai 种子/直链/逐页
+    ├── ehentai_dl.py   ← E-Hentai Archive/逐页
+    ├── jmcomic_dl.py   ← JMComic 自动解密
+    ├── pica_dl.py      ← picacg API/pica-cli
+    ├── credentials.py  ← 凭证读写
+    ├── update_mirrors.py ← nhentai 镜像维护
+    └── mirrors.json    ← 镜像列表
 ```
 
 ## Agent 凭证自配置
@@ -270,6 +395,7 @@ python3 scripts/dl.py --setup                          # 凭证配置
 | 想只看某个站 | `--site jmcomic` 或 `--site nhentai` |
 | jmcomic 下载到错误目录 | 更新到 v2+，`-o` 改用 `dir_rule` 设置 |
 | `pip: command not found` | 用 `pip3` 或 `python3 -m pip` |
+| `npx dl4henga` 找不到 | 先在项目目录运行 `npm link` 或等 npm 发布 |
 | TLS connect error (curl 35) | jmcomic 的 curl_cffi 与系统 OpenSSL 不兼容，等待镜像切换重试即可 |
 | nhentai 搜索无结果 | 先 `--check` 确认代理和镜像状态 |
 | E-Hentai 搜索不可达 | 需要代理，或用 ExHentai cookie |
