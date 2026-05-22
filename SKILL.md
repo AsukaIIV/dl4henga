@@ -1,8 +1,8 @@
 ---
 name: dl4henga
 description: >
-  三站同人志下载工具集 (nhentai / E-Hentai / JMComic 禁漫天堂)。
-  支持三站并行搜索、随机推荐、BT种子提取、逐页高清下载、跨站全集下载、代理自发现。
+  四站同人志下载工具集 (nhentai / E-Hentai / JMComic / picacg)。
+  支持四站并行搜索、随机推荐、BT种子提取、逐页高清下载、跨站全集下载、代理自发现。
 
 触发规则 (任一满足即激活):
   1. URL 含 nhentai.net / nhentai.to / nhentai.xxx / e-hentai.org / exhentai.org /
@@ -11,9 +11,10 @@ description: >
   3. 用户要求搜索/下载 nhentai/禁漫/E站 的本子
   4. 用户要求随机推荐/下载本子
   5. 用户提及 "nhentai" "禁漫" "ehentai" "exhentai" 等画师名
+  6. 用户要求更新镜像或配置凭证
 ---
 
-# dl4henga — 三站下载工具集 v2
+# dl4henga — 四站下载工具集 v2
 
 ## 核心脚本
 
@@ -24,6 +25,7 @@ description: >
 | `scripts/nhentai_dl.py` | nhentai | 种子/直链 + 搜索/随机 + 逐页下载 |
 | `scripts/ehentai_dl.py` | E-Hentai/ExHentai | 逐页下载 + Archive + Cookie + 关键词搜索 |
 | `scripts/jmcomic_dl.py` | JMComic (禁漫天堂) | 自动解密 + 搜索/随机 |
+| `scripts/pica_dl.py` | picacg (哔咔漫画) | 搜索 + pica-cli/API 下载 |
 | `scripts/update_mirrors.py` | nhentai | 镜像维护 |
 
 ## 依赖安装
@@ -32,14 +34,67 @@ description: >
 pip install jmcomic cloudscraper curl_cffi
 ```
 
-## 凭证管理 (ExHentai)
+## Agent 凭证自配置
 
-```bash
-python3 scripts/dl.py --setup              # 交互式配置
-export EXHENTAI_COOKIES='ipb_member_id=xxx; ipb_pass_hash=xxx; igneous=xxx'
+**在执行任何需要凭证的操作前，先检查并主动配置。**
+
+### 检查时机
+- 用户首次使用任何功能时
+- 搜索/下载涉及 picacg 或 ExHentai 时
+- 用户说"配置"、"setup"、"登录"时
+
+### 配置流程
+
+**ExHentai cookie**:
+1. 运行 `python3 scripts/dl.py --check` 检测
+2. 未配置时，引导用户:
+   - 浏览器登录 e-hentai.org → F12 → Application → Cookies
+   - 复制 `ipb_member_id`, `ipb_pass_hash`, `igneous` 三个值
+   - 格式: `ipb_member_id=xxx; ipb_pass_hash=xxx; igneous=xxx`
+3. 用户提供后，直接写入 credentials.json:
+   ```bash
+   python3 -c "
+   import json, os
+   p = os.path.expanduser('~/.config/dl4henga/credentials.json')
+   os.makedirs(os.path.dirname(p), exist_ok=True)
+   data = {}
+   if os.path.exists(p):
+       with open(p) as f: data = json.load(f)
+   data['exhentai_cookies'] = '用户提供的cookie字符串'
+   with open(p, 'w') as f:
+       json.dump(data, f)
+   os.chmod(p, 0o600)
+   "
+   ```
+
+**picacg 账号**:
+1. 引导用户提供哔咔注册邮箱和密码
+2. 直接写入 credentials.json:
+   ```bash
+   python3 -c "
+   import json, os
+   p = os.path.expanduser('~/.config/dl4henga/credentials.json')
+   os.makedirs(os.path.dirname(p), exist_ok=True)
+   data = {}
+   if os.path.exists(p):
+       with open(p) as f: data = json.load(f)
+   data['picacg'] = {'email': '用户邮箱', 'password': '用户密码'}
+   with open(p, 'w') as f:
+       json.dump(data, f)
+   os.chmod(p, 0o600)
+   "
+   ```
+3. 自动验证: `python3 scripts/pica_dl.py --check`
+
+### 存储位置
+`~/.config/dl4henga/credentials.json` (权限 600)
+
+```json
+{
+  "exhentai_cookies": "ipb_member_id=xxx; ipb_pass_hash=xxx; igneous=xxx",
+  "picacg": {"email": "user@example.com", "password": "secret"}
+}
 ```
-
-存储: `~/.config/dl4henga/credentials.json` (权限 600)
 
 ---
 
@@ -86,7 +141,24 @@ python3 scripts/jmcomic_dl.py 350234 -o ~/Desktop
 
 ---
 
-## 四、三站统一搜索 (v2 新增)
+## 四、picacg (哔咔漫画) v1 新增
+
+```bash
+python3 scripts/pica_dl.py --check
+python3 scripts/pica_dl.py --search "关键词" [--count 20] [--json]
+python3 scripts/pica_dl.py <24位hex_comic_id>
+python3 scripts/pica_dl.py --favorites
+python3 scripts/pica_dl.py --leaderboard
+python3 scripts/pica_dl.py --setup
+```
+
+底层: `justorez/pica-cli` (⭐220) + 直接 API 回退。需配置 picacg 账号密码。
+
+> **搜索**: 通过 picacg REST API 搜索，返回标题/作者/章节数。**下载**: pica-cli 优先（需要 `npm i -g pica-cli`），无 pica-cli 时回退到直接 API 逐章下载。
+
+---
+
+## 五、四站统一搜索 (v2)
 
 `--search` 默认并行搜索 nhentai + JMComic + E-Hentai，自动去重合并。
 某站不可用时**静默降级**，不影响其他站点。
@@ -131,19 +203,25 @@ python3 scripts/dl.py --random --site jm
 
 ---
 
-## 五、三站对比
+## 六、四站对比
 
-| | nhentai | E-Hentai | JMComic |
-|---|---|---|---|
-| 需要登录 | ❌ | exhentai 需 cookie | ❌ |
-| 需要代理 | 需要 | 需要 | 不需要 |
-| 搜索 | ✅ | ✅ (v2) | ✅ |
-| 随机推荐 | ✅ | ✅ (v2) | ✅ |
-| 全集下载 | ✅ | - | - |
+| | nhentai | E-Hentai | JMComic | picacg |
+|---|---|---|---|---|
+| 需要登录 | ❌ | exhentai 需 cookie | ❌ | ✅ 账号密码 |
+| 需要代理 | 需要 | 需要 | 不需要 | 不需要 |
+| 搜索 | ✅ | ✅ | ✅ | ✅ |
+| 随机推荐 | ✅ | ✅ | ✅ | - |
+| 全集下载 | ✅ `--artist-dl` | tag `--download-all` | - | ✅ `--favorites` |
+| 逐页下载 | ✅ `--dl` | ✅ 自动 | ✅ 自动 | ✅ API |
+| Archive (zip) | - | ✅ 优先 | - | ✅ via pica-cli |
+| 种子/BT 提取 | ✅ 磁力+种子 | - | - | - |
+| JSON 输出 | ✅ | ✅ | ✅ | ✅ |
+| 代理自发现 | ✅ | ✅ | ✅ | - |
+| 排行榜 | - | - | - | ✅ `--leaderboard` |
 
 ---
 
-## 六、统一命令速查
+## 七、统一命令速查
 
 | 参数 | 说明 |
 |------|------|
@@ -152,6 +230,11 @@ python3 scripts/dl.py --random --site jm
 | `--random` | **三站随机推荐** (v2: 跨站) |
 | `--tag TAG` | 配合 --search/--random 使用 |
 | `--count N` | 每站搜索结果数 (默认 20) |
+| `--page N` | 搜索页码 (默认 1) |
+| `--sort SORT` | 排序: popular (最热) / recent (最新) |
+| `--chinese` | 过滤只显示中文结果 (nhentai 支持) |
+| `--no-web-verify` | 关闭 web 搜索双向验证 (默认开启) |
+| `--web-threshold F` | web 验证触发的相似度下限 (默认 0.5) |
 | `--json` | JSON 格式输出 |
 | `-p, --proxy` | 代理地址 |
 | `-o, --output` | 输出目录 |
@@ -174,7 +257,7 @@ python3 scripts/dl.py 604256                           # 自动路由
 python3 scripts/dl.py https://e-hentai.org/g/{id}/{token}/
 
 # 工具
-python3 scripts/dl.py --check                          # 三站全检
+python3 scripts/dl.py --check                          # 四站全检
 python3 scripts/dl.py --setup                          # 凭证配置
 ```
 

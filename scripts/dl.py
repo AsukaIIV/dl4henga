@@ -28,9 +28,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROUTES = [
     (re.compile(r'(?:exhentai|e-hentai)\.org', re.I), 'ehentai_dl.py'),
     (re.compile(r'(?:18comic|jmcomic)', re.I), 'jmcomic_dl.py'),
+    (re.compile(r'(?:picacg|picacomic|pica\.)', re.I), 'pica_dl.py'),
     (re.compile(r'(?:n(?:x)?hentai|hentai)[\w.-]*/g/\d', re.I), 'nhentai_dl.py'),
     (re.compile(r'^\d{1,6}$'), 'nhentai_dl.py'),
     (re.compile(r'^JM\d', re.I), 'jmcomic_dl.py'),
+    (re.compile(r'^[a-f0-9]{24}$', re.I), 'pica_dl.py'),
 ]
 
 
@@ -39,6 +41,61 @@ def route(raw):
         if pattern.search(raw):
             return script
     return None
+
+
+# ── 凭证状态检查 ──────────────────────────────────────────
+
+def _check_creds():
+    """检查凭证配置状态，返回 (all_ok, messages)"""
+    msgs = []
+    ok = True
+    creds = {}
+
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        from credentials import get_credentials
+        creds = get_credentials()
+    except Exception:
+        pass
+
+    # ExHentai cookies
+    eh_cookies = creds.get("exhentai_cookies") if creds else None
+    if eh_cookies:
+        msgs.append("  ✅ ExHentai cookie 已配置")
+    else:
+        msgs.append("  ⚠️  ExHentai cookie 未配置 — 运行: python3 dl.py --setup")
+        ok = False
+
+    # picacg account
+    pica = creds.get("picacg", {}) if creds else {}
+    pica_email = pica.get("email") or os.environ.get("PICA_ACCOUNT")
+    if pica_email:
+        msgs.append("  ✅ picacg 账号已配置")
+    else:
+        msgs.append("  ⚠️  picacg 账号未配置 — 运行: python3 pica_dl.py --setup")
+        ok = False
+
+    return ok, msgs
+
+
+def _print_creds_banner(quiet=False):
+    """输出凭证状态横幅"""
+    ok, msgs = _check_creds()
+    if ok or quiet:
+        return
+
+    print()
+    print("╔══════════════════════════════════════════════╗")
+    print("║  ⚠️  凭证未完整 — 部分站点功能受限           ║")
+    print("╠══════════════════════════════════════════════╣")
+    for m in msgs:
+        print(f"║{m:<46}║")
+    print("╠══════════════════════════════════════════════╣")
+    print("║  配置指南:                                  ║")
+    print("║    ExHentai → python3 dl.py --setup        ║")
+    print("║    picacg   → python3 pica_dl.py --setup    ║")
+    print("╚══════════════════════════════════════════════╝")
+    print()
 
 
 # ── 帮助 ──────────────────────────────────────────────────
@@ -67,6 +124,7 @@ def print_help():
     print("    nhentai / 纯数字 ID       → nhentai_dl.py")
     print("    e-hentai / exhentai       → ehentai_dl.py")
     print("    18comic / JM / jmcomic    → jmcomic_dl.py")
+    print("    picacg / 24位hex ID        → pica_dl.py")
     print()
     print("━━━ 工具 ━━━")
     print("  --check                    四站全检")
@@ -95,7 +153,15 @@ def main():
     if '--check' in args:
         print("🔬 四站全检")
         print("=" * 50)
-        for script in ['nhentai_dl.py', 'ehentai_dl.py', 'jmcomic_dl.py']:
+
+        # 凭证状态
+        ok, msgs = _check_creds()
+        print("\n🔐 凭证状态:")
+        for m in msgs:
+            print(m)
+        print()
+
+        for script in ['nhentai_dl.py', 'ehentai_dl.py', 'jmcomic_dl.py', 'pica_dl.py']:
             path = os.path.join(SCRIPT_DIR, script)
             if os.path.exists(path):
                 print(f"\n━━━ {script} ━━━")
@@ -231,6 +297,10 @@ def main():
                     web_threshold = float(args[wt_idx + 1])
             except (ValueError, IndexError, TypeError):
                 pass
+
+        # 凭证状态横幅
+        if not quiet and not json_out:
+            _print_creds_banner(quiet=quiet)
 
         # 导入搜索引擎
         sys.path.insert(0, SCRIPT_DIR)

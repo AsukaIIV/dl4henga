@@ -35,10 +35,12 @@ SEARCH_TIMEOUT = 30  # 单站搜索超时 (秒)
 _nh_search = None
 _jm_search = None
 _eh_search = None
+_pc_search = None
 
 _NH_LOADED = False
 _JM_LOADED = False
 _EH_LOADED = False
+_PC_LOADED = False
 
 
 def _load_nhentai():
@@ -83,6 +85,20 @@ def _load_ehentai():
         return None
 
 
+def _load_picacg():
+    global _pc_search, _PC_LOADED
+    if _PC_LOADED:
+        return _pc_search
+    _PC_LOADED = True
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        from pica_dl import search_comics as fn
+        _pc_search = fn
+        return fn
+    except Exception:
+        return None
+
+
 # ── 站点元信息 ────────────────────────────────────────────
 
 SITE_META = {
@@ -113,9 +129,18 @@ SITE_META = {
         "result_id_field": "id",
         "url_template": "https://e-hentai.org/g/{id}/{token}/",
     },
+    "picacg": {
+        "name": "picacg",
+        "label": "PC",
+        "icon": "🟣",
+        "loader": _load_picacg,
+        "needs_proxy": False,
+        "result_id_field": "id",
+        "url_template": "https://pica.picacomic.com/comics/{id}",
+    },
 }
 
-ALL_SITES = ["nhentai", "jmcomic", "ehentai"]
+ALL_SITES = ["nhentai", "jmcomic", "ehentai", "picacg"]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -137,6 +162,8 @@ def _search_one(site_name, query, proxy=None, count=20, page=1, sort="popular", 
             results = fn(query, proxy=site_proxy, count=count, sort=sort, page=page, verbose=verbose)
         elif site_name == "ehentai":
             results = fn(query, proxy=site_proxy, cookies=cookies, count=count, page=page, verbose=verbose)
+        elif site_name == "picacg":
+            results = fn(query, proxy=site_proxy, count=count, verbose=verbose)
         else:
             results = fn(query, proxy=site_proxy, count=count, page=page, verbose=verbose)
         elapsed = time.time() - start
@@ -164,12 +191,17 @@ def _normalize_result(item, source):
         token = item.get("token", "")
         url = meta["url_template"].format(id=site_id, token=token)
 
+    # picacg 用 "author" 字段，转为 artists 列表
+    artists = item.get("artists", [])
+    if not artists and item.get("author") and item["author"] != "?":
+        artists = [item["author"]]
+
     return {
         "source": source,
         "site_id": site_id,
         "title": str(item.get("title", "N/A")),
         "pages": str(item.get("pages", "?")),
-        "artists": item.get("artists", []),
+        "artists": artists,
         "url": url,
         # 保留原始数据用于调试
         "_raw": item,
